@@ -48,6 +48,9 @@
 #include <helper_string.h>
 #include <helper_cuda.h>
 
+//Bellowing line is from http://blog.csdn.net/weixinhum/article/details/46683509
+//extern "C" int YCrCb2RGB(unsigned char *Device_Y, unsigned char *Device_Cr, unsigned char *Device_Cb, int width, int height, int YStep, int CrStep, int CbStep, int img_step, unsigned char *Device_data, int nMCUBlocksV, int nMCUBlocksH);//显卡处理函数
+
 using namespace std;
 
 struct FrameHeader
@@ -445,7 +448,7 @@ int main(int argc, char **argv)
     int nPos = 0;
     int nMarker = nextMarker(pJpegData, nPos, nInputLength);
 
-    if (nMarker != 0x0D8)
+    if (nMarker != 0x0D8) //Start Of Image 0XFFD8
     {
         cerr << "Invalid Jpeg Image" << endl;
         return EXIT_FAILURE;
@@ -487,26 +490,45 @@ int main(int argc, char **argv)
 
     while (nMarker != -1)
     {
+    	//JPEG中数据存放位大端字节序
+	    //JPEG SOI : FF D8  //  图片起始
         if (nMarker == 0x0D8)
         {
             // Embedded Thumbnail, skip it
             int nNextMarker = nextMarker(pJpegData, nPos, nInputLength);
 
-            while (nNextMarker != -1 && nNextMarker != 0x0D9)
+
+			//JPEG EOI : FF D9  //  图片结束
+            while (nNextMarker != -1 && nNextMarker != 0x0D9) 
             {
                 nNextMarker = nextMarker(pJpegData, nPos, nInputLength);
             }
         }
 
-        if (nMarker == 0x0DD)
+		///越过JPEG APP0：0xFFE0 ///
+
+		///越过JPEG APP1: FF E1 TIFF格式的EXIF数据///
+
+		///越过JPEG APPn： FF En // APPn 标记//
+
+		//DQT ：0xFFDB  //Define Quantization Table，定义量化表
+		if (nMarker == 0x0DB)
         {
-            readRestartInterval(pJpegData + nPos, nRestartInterval);
+            // Quantization Tables
+            readQuantizationTables(pJpegData + nPos, aQuantizationTables);
         }
 
-        if ((nMarker == 0x0C0) | (nMarker == 0x0C2))
+		//DRI，Define Restart Interval，定义差分编码累计复位的间隔，标记码为固定值0XFFDD
+		if (nMarker == 0x0DD)
+		{
+			readRestartInterval(pJpegData + nPos, nRestartInterval);
+		}
+		//SOF0：0xFFC0  //Start of Frame，帧图像开始		
+		
+        if ((nMarker == 0x0C0) | (nMarker == 0x0C2)) 
         {
             //Assert Baseline for this Sample
-            //Note: NPP does support progressive jpegs for both encode and decode
+            //Note: NPP does support progressive jpegs for both encode and decode 鍙鐞嗛€掑寮忕紪鐮丣PEG
             if (nMarker != 0x0C0)
             {
                 cerr << "The sample does only support baseline JPEG images" << endl;
@@ -517,7 +539,7 @@ int main(int argc, char **argv)
             readFrameHeader(pJpegData + nPos, oFrameHeader);
             cout << "Image Size: " << oFrameHeader.nWidth << "x" << oFrameHeader.nHeight << "x" << static_cast<int>(oFrameHeader.nComponents) << endl;
 
-            //Assert 3-Channel Image for this Sample
+            //Assert 3-Channel Image for this Sample 只处理3通道的彩色jpeg
             if (oFrameHeader.nComponents != 3)
             {
                 cerr << "The sample does only support color JPEG images" << endl;
@@ -550,7 +572,7 @@ int main(int argc, char **argv)
                 aSrcSize[i].width = oBlocks.width * 8;
                 aSrcSize[i].height = oBlocks.height * 8;
 
-                // Allocate Memory
+                // Allocate Memory  分配现存
                 size_t nPitch;
                 NPP_CHECK_CUDA(cudaMallocPitch(&apdDCT[i], &nPitch, oBlocks.width * 64 * sizeof(Npp16s), oBlocks.height));
                 aDCTStep[i] = static_cast<Npp32s>(nPitch);
@@ -562,18 +584,17 @@ int main(int argc, char **argv)
             }
         }
 
-        if (nMarker == 0x0DB)
-        {
-            // Quantization Tables
-            readQuantizationTables(pJpegData + nPos, aQuantizationTables);
-        }
 
-        if (nMarker == 0x0C4)
+
+		//DHT：0xFFC4  //Difine Huffman Table，定义哈夫曼表
+        if (nMarker == 0x0C4) 
         {
             // Huffman Tables
             readHuffmanTables(pJpegData + nPos, aHuffmanTables);
         }
 
+		
+		//SOS：0xFFDA  // Start of Scan，扫描开始 12字节
         if (nMarker == 0x0DA)
         {
             // Scan
@@ -600,7 +621,7 @@ int main(int argc, char **argv)
                 nppiDecodeHuffmanSpecInitAllocHost_JPEG(pHuffmanDCTables[(oScanHeader.aHuffmanTablesSelector[i] >> 4)].aCodes, nppiDCTable, &apDecHuffmanDCTable[i]);
                 nppiDecodeHuffmanSpecInitAllocHost_JPEG(pHuffmanACTables[(oScanHeader.aHuffmanTablesSelector[i] & 0x0f)].aCodes, nppiACTable, &apDecHuffmanACTable[i]);
             }
-
+			//解码图像数据块
             NPP_CHECK_NPP(nppiDecodeHuffmanScanHost_JPEG_8u16s_P3R(pJpegData + nPos, nAfterNextMarkerPos - nPos - 2,
                                                                    nRestartInterval, oScanHeader.nSs, oScanHeader.nSe, 
                                                                    oScanHeader.nA >> 4, oScanHeader.nA & 0x0f,
@@ -609,7 +630,7 @@ int main(int argc, char **argv)
                                                                    apDecHuffmanACTable,
                                                                    aSrcSize));
 
-            for (int i = 0; i < 3; ++i)
+			for (int i = 0; i < 3; ++i) //释放主机缓冲
             {
                 nppiDecodeHuffmanSpecFreeHost_JPEG(apDecHuffmanDCTable[i]);
                 nppiDecodeHuffmanSpecFreeHost_JPEG(apDecHuffmanACTable[i]);
@@ -649,8 +670,8 @@ int main(int argc, char **argv)
         NPP_CHECK_CUDA(cudaMemcpyAsync(apdDCT[i], aphDCT[i], aDCTStep[i] * aSrcSize[i].height / 8, cudaMemcpyHostToDevice));
     }
 
-    // Inverse DCT,��JPEGͼ����н���ת��ΪYUV����,YUV���ݴ洢��apSrcImage[0],apSrcImage[1],apSrcImage[2]��
-	//�䲽��(ͨ������)�ֱ����aSrcImageStep[0],aSrcImageStep[1],aSrcImageStep[2]��
+    // 实现了将JPEG图像进行解码转化为YUV数据的功能。YUV数据存储在apSrcImage[0],apSrcImage[1],apSrcImage[2]中，
+	//而其步长(通道宽度)分别存在aSrcImageStep[0],aSrcImageStep[1],aSrcImageStep[2]中
     for (int i = 0; i < 3; ++ i)
     {
         NPP_CHECK_NPP(nppiDCTQuantInv8x8LS_JPEG_16s8u_C1R_NEW(apdDCT[i], aDCTStep[i],
@@ -884,7 +905,7 @@ int main(int argc, char **argv)
 
     for (int i = 0; i < 3; ++i)
     {
-        nppiEncodeHuffmanSpecFree_JPEG(apHuffmanDCTable[i]);
+        0(apHuffmanDCTable[i]);
         nppiEncodeHuffmanSpecFree_JPEG(apHuffmanACTable[i]);
     }
 
