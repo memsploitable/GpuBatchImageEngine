@@ -514,7 +514,7 @@ int main(int argc, char **argv)
 		//DQT ：0xFFDB  //Define Quantization Table，定义量化表
 		if (nMarker == 0x0DB)
         {
-            // Quantization Tables
+            // Quantization Tables读取量化表
             readQuantizationTables(pJpegData + nPos, aQuantizationTables);
         }
 
@@ -528,14 +528,14 @@ int main(int argc, char **argv)
         if ((nMarker == 0x0C0) | (nMarker == 0x0C2)) 
         {
             //Assert Baseline for this Sample
-            //Note: NPP does support progressive jpegs for both encode and decode 鍙鐞嗛€掑寮忕紪鐮丣PEG
+            //Note: NPP does support progressive jpegs for both encode and decode只处理递增编码的JPEG
             if (nMarker != 0x0C0)
             {
                 cerr << "The sample does only support baseline JPEG images" << endl;
                 return EXIT_SUCCESS;
             }
 
-            // Baseline or Progressive Frame Header
+            // Baseline or Progressive Frame Header 读取图像宽和高信息
             readFrameHeader(pJpegData + nPos, oFrameHeader);
             cout << "Image Size: " << oFrameHeader.nWidth << "x" << oFrameHeader.nHeight << "x" << static_cast<int>(oFrameHeader.nComponents) << endl;
 
@@ -546,7 +546,7 @@ int main(int argc, char **argv)
                 return EXIT_SUCCESS;
             }
 
-            // Compute channel sizes as stored in the JPEG (8x8 blocks & MCU block layout)
+            // Compute channel sizes as stored in the JPEG (8x8 blocks & MCU block layout) 计算并行计算空间
             for (int i = 0; i < oFrameHeader.nComponents; ++ i)
             {
                 nMCUBlocksV = max(nMCUBlocksV, oFrameHeader.aSamplingFactors[i] & 0x0f );
@@ -572,7 +572,7 @@ int main(int argc, char **argv)
                 aSrcSize[i].width = oBlocks.width * 8;
                 aSrcSize[i].height = oBlocks.height * 8;
 
-                // Allocate Memory  分配现存
+                // Allocate Memory  分配显存
                 size_t nPitch;
                 NPP_CHECK_CUDA(cudaMallocPitch(&apdDCT[i], &nPitch, oBlocks.width * 64 * sizeof(Npp16s), oBlocks.height));
                 aDCTStep[i] = static_cast<Npp32s>(nPitch);
@@ -586,7 +586,7 @@ int main(int argc, char **argv)
 
 
 
-		//DHT：0xFFC4  //Difine Huffman Table，定义哈夫曼表
+		//DHT：0xFFC4  //Difine Huffman Table，读取哈夫曼表
         if (nMarker == 0x0C4) 
         {
             // Huffman Tables
@@ -617,11 +617,11 @@ int main(int argc, char **argv)
             NppiDecodeHuffmanSpec *apDecHuffmanACTable[3];
 
             for (int i = 0; i < 3; ++i)
-            {
+            {//Allocates memory and creates a Huffman table 将图片中读取的霍夫曼表分别拷贝出来
                 nppiDecodeHuffmanSpecInitAllocHost_JPEG(pHuffmanDCTables[(oScanHeader.aHuffmanTablesSelector[i] >> 4)].aCodes, nppiDCTable, &apDecHuffmanDCTable[i]);
                 nppiDecodeHuffmanSpecInitAllocHost_JPEG(pHuffmanACTables[(oScanHeader.aHuffmanTablesSelector[i] & 0x0f)].aCodes, nppiACTable, &apDecHuffmanACTable[i]);
             }
-			//解码图像数据块
+			//读取图像数据块的霍夫曼编码64x1 macro blocks
             NPP_CHECK_NPP(nppiDecodeHuffmanScanHost_JPEG_8u16s_P3R(pJpegData + nPos, nAfterNextMarkerPos - nPos - 2,
                                                                    nRestartInterval, oScanHeader.nSs, oScanHeader.nSe, 
                                                                    oScanHeader.nA >> 4, oScanHeader.nA & 0x0f,
@@ -640,7 +640,7 @@ int main(int argc, char **argv)
         nMarker = nextMarker(pJpegData, nPos, nInputLength);
     }
 
-    // Copy DCT coefficients and Quantization Tables from host to device 
+    // Copy DCT coefficients and Quantization Tables from host to device 拷贝DCT系数和量化表到现存
     Npp8u aZigzag[] = {
             0,  1,  5,  6, 14, 15, 27, 28,
             2,  4,  7, 13, 16, 26, 29, 42,
@@ -652,7 +652,7 @@ int main(int argc, char **argv)
             35, 36, 48, 49, 57, 58, 62, 63
     };
 
-    for (int i = 0; i < 4; ++i)
+	for (int i = 0; i < 4; ++i) //给量化表指定余弦系数
     {
         Npp8u temp[64];
 
@@ -728,7 +728,7 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	// Set sampling factor for destination image.
+	// Set sampling factor for destination image.设置转换图像的采样系数
     oFrameHeader.aSamplingFactors[1] = (1 << 4) | (oFrameHeader.aSamplingFactors[1] & 0x0f);
     oFrameHeader.aSamplingFactors[1] = (oFrameHeader.aSamplingFactors[1] & 0xf0) | 1;
     oFrameHeader.aSamplingFactors[2] = (1 << 4) | (oFrameHeader.aSamplingFactors[2] & 0x0f);
@@ -776,7 +776,7 @@ int main(int argc, char **argv)
 
     };
     
-    // Compute channel sizes as stored in the output JPEG (8x8 blocks & MCU block layout)
+    // Compute channel sizes as stored in the output JPEG (8x8 blocks & MCU block layout)//处理输出图像的尺寸和分配显存
     NppiSize oDstImageSize;
     float frameWidth = floor((float)oFrameHeader.nWidth * (float)nScaleFactor);
     float frameHeight = floor((float)oFrameHeader.nHeight * (float)nScaleFactor);
@@ -818,7 +818,7 @@ int main(int argc, char **argv)
         aDstImageStep[i] = static_cast<Npp32s>(nPitch);
     }
 
-    // Scale to target image size
+    // Scale to target image size缩放图像尺寸
     Npp8u * apLanczosBuffer[3];
     for (int i = 0; i < 3; ++ i)
     {
@@ -849,7 +849,7 @@ int main(int argc, char **argv)
     *   Output
     *
     ***************************/
-    // Forward DCT
+    // Forward DCT前向余弦变换
     for (int i = 0; i < 3; ++i)
     {
         NPP_CHECK_NPP(nppiDCTQuantFwd8x8LS_JPEG_8u16s_C1R_NEW(apDstImage[i], aDstImageStep[i],
@@ -860,7 +860,7 @@ int main(int argc, char **argv)
     }
 
 
-    // Huffman Encoding
+    // Huffman Encoding霍夫曼编码
     Npp8u *pdScan;
     Npp32s nScanSize;
     nScanSize = oDstImageSize.width * oDstImageSize.height * 2;
@@ -876,7 +876,7 @@ int main(int argc, char **argv)
     NppiEncodeHuffmanSpec *apHuffmanACTable[3];
 
     for (int i = 0; i < 3; ++i)
-    {
+    {//Allocates memory and creates a Huffman table 使用和原始图片一样的霍夫曼表
         nppiEncodeHuffmanSpecInitAlloc_JPEG(pHuffmanDCTables[(oScanHeader.aHuffmanTablesSelector[i] >> 4)].aCodes, nppiDCTable, &apHuffmanDCTable[i]);
         nppiEncodeHuffmanSpecInitAlloc_JPEG(pHuffmanACTables[(oScanHeader.aHuffmanTablesSelector[i] & 0x0f)].aCodes, nppiACTable, &apHuffmanACTable[i]);
     }
@@ -893,7 +893,7 @@ int main(int argc, char **argv)
         hpTableAC[iComponent] = pHuffmanACTables[iComponent].aTable;
     }
     
-    Npp32s nScanLength;                
+    Npp32s nScanLength;    //重新进行jpeg编码           
     NPP_CHECK_NPP(nppiEncodeOptimizeHuffmanScan_JPEG_8u16s_P3R(apdDCT, aDCTStep,
                                                        0, oScanHeader.nSs, oScanHeader.nSe, oScanHeader.nA >> 4, oScanHeader.nA & 0x0f,
                                                        pdScan, &nScanLength,
@@ -905,7 +905,7 @@ int main(int argc, char **argv)
 
     for (int i = 0; i < 3; ++i)
     {
-        0(apHuffmanDCTable[i]);
+        0(apHuffmanDCTable[i]);//Frees the memory
         nppiEncodeHuffmanSpecFree_JPEG(apHuffmanACTable[i]);
     }
 
@@ -916,27 +916,27 @@ int main(int argc, char **argv)
     oFrameHeader.nWidth = oDstImageSize.width;
     oFrameHeader.nHeight = oDstImageSize.height;
 
-    writeMarker(0x0D8, pDstOutput);
+    writeMarker(0x0D8, pDstOutput); //  图片起始
     writeJFIFTag(pDstOutput);
-    writeQuantizationTable(aQuantizationTables[0], pDstOutput);
-    writeQuantizationTable(aQuantizationTables[1], pDstOutput);
-    writeFrameHeader(oFrameHeader, pDstOutput);
-    writeHuffmanTable(pHuffmanDCTables[0], pDstOutput);
+    writeQuantizationTable(aQuantizationTables[0], pDstOutput); //Define Quantization Table，使用之前图像的量化表
+    writeQuantizationTable(aQuantizationTables[1], pDstOutput); //Exif信息和Restart Interval信息抛弃
+    writeFrameHeader(oFrameHeader, pDstOutput); //Start of Frame，帧图像开始
+    writeHuffmanTable(pHuffmanDCTables[0], pDstOutput); //写入压缩后的哈夫曼表
     writeHuffmanTable(pHuffmanACTables[0], pDstOutput);
     writeHuffmanTable(pHuffmanDCTables[1], pDstOutput);
     writeHuffmanTable(pHuffmanACTables[1], pDstOutput);
-    writeScanHeader(oScanHeader, pDstOutput);
-    NPP_CHECK_CUDA(cudaMemcpy(pDstOutput, pdScan, nScanLength, cudaMemcpyDeviceToHost));
+    writeScanHeader(oScanHeader, pDstOutput); // Start of Scan，扫描开始 12字节
+    NPP_CHECK_CUDA(cudaMemcpy(pDstOutput, pdScan, nScanLength, cudaMemcpyDeviceToHost)); //从显存拷回变换后的图像数据到主机缓冲
     pDstOutput += nScanLength;
-    writeMarker(0x0D9, pDstOutput);
+    writeMarker(0x0D9, pDstOutput); //  图片结束
 
     {
-        // Write result to file.
+        // Write result to file.将主机缓冲中的图像数据写入文件
         std::ofstream outputFile(szOutputFile, ios::out | ios::binary);
         outputFile.write(reinterpret_cast<const char *>(pDstJpeg), static_cast<int>(pDstOutput - pDstJpeg));
     }
 
-    // Cleanup
+    // Cleanup 清理和释放空间
     delete [] pJpegData;
     delete [] pDstJpeg;
 
