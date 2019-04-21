@@ -9,6 +9,7 @@
 
 import logging
 import time
+import sys
 
 # create a logger
 logger = logging.getLogger('logger')

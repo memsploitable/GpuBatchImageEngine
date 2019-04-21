@@ -8,12 +8,13 @@
 
 
 from PyQt5 import QtWidgets
+from PyQt5 import QtGui
 
 from Common import *
 from Ui_BatchWizard import Ui_BatchWizardDialog
 
 
-class BatchWizardDialog(Ui_BatchWizardDialog):
+class BatchWizardDialog(QtWidgets.QDialog, Ui_BatchWizardDialog):
     def __init__(self, parent=None):
         super(BatchWizardDialog, self).__init__(parent)
         self.setupUi(self)
@@ -21,7 +22,6 @@ class BatchWizardDialog(Ui_BatchWizardDialog):
 
 
 if __name__ == "__main__":
-    import sys
 
     app = QtWidgets.QApplication(sys.argv)
     BatchWizardDialog = QtWidgets.QDialog()

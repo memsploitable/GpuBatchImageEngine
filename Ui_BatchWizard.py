@@ -6,8 +6,7 @@
 #
 # WARNING! All changes made in this file will be lost!
 
-from PyQt5 import QtCore, QtWidgets
-
+from PyQt5 import QtCore, QtGui, QtWidgets
 
 class Ui_BatchWizardDialog(object):
     def setupUi(self, BatchWizardDialog):
@@ -95,10 +94,10 @@ class Ui_BatchWizardDialog(object):
 
 if __name__ == "__main__":
     import sys
-
     app = QtWidgets.QApplication(sys.argv)
     BatchWizardDialog = QtWidgets.QDialog()
     ui = Ui_BatchWizardDialog()
     ui.setupUi(BatchWizardDialog)
     BatchWizardDialog.show()
     sys.exit(app.exec_())
+
