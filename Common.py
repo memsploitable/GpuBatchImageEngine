@@ -10,25 +10,25 @@
 import logging
 import time
 
-# 创建一个logger
+# create a logger
 logger = logging.getLogger('logger')
 logger.setLevel(logging.DEBUG)
 
-# 创建一个handler，用于写入日志文件
+# create a  handler, write into file
 nowTime = time.strftime("%Y%m%d_%H%M%S", time.localtime())
 logFile = nowTime + '.log'
 fh = logging.FileHandler("logs\\" + logFile)
 fh.setLevel(logging.DEBUG)
 
-# 再创建一个handler，用于输出到控制台
+# create a  handler, output to the console
 ch = logging.StreamHandler()
 ch.setLevel(logging.DEBUG)
 
-# 定义handler的输出格式
+# give the format of handler
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 
-# 给logger添加handler
+# add handler to logger
 logger.addHandler(fh)
 logger.addHandler(ch)
